@@ -1,0 +1,180 @@
+---
+title: "Problem Set 6"
+author: "Stewart Green"
+date: "May 30, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library(readr)
+library(SuppDists)
+data <- read_csv("C:/Users/stewa/Desktop/Masters/Spring 2018/GSE 544/F-F_Research_Data_Factors.CSV")
+```
+
+## Problem 1
+
+```{r}
+born=which(data$X1==199511) #index of my DOB
+#corrections for borrowing cost
+x=data$`Mkt-RF`[1:1101]-0.0045
+r=data$RF[1:1101]+0.0045
+```
+
+```{r}
+JohnsonSu=JohnsonFit((x[1:born]-r[1:born])/(1+r[1:born]))
+```
+Fit distribtion to data from beginning until my DOB.
+
+```{r}
+rJSU=rJohnson(100000,JohnsonSu)
+```
+Random numbers from fitted distribution to use in optimization.
+
+```{r}
+growthrate=function(b){
+  return(-mean((log(1+b*rJSU*0.01))))
+}
+```
+Function to optimize by changing b.
+
+```{r, warning=FALSE, message=FALSE}
+f=0.001
+res=optim(f,growthrate,method="BFGS")
+f=res$par
+f
+```
+Find the optimal fraction of wealth to invest in Mkt-rf asset. The optimal fraction seems to depend on the randomly generated values from our fitted distribution.
+
+```{r}
+portfolio=numeric(length(x)-born)
+portfolio[1]=10000
+for(i in 2:length(portfolio)){
+  portfolio[i]=portfolio[i-1]*(1+(1-f)*r[born+i]*0.01+f*x[born+i]*0.01)
+}
+```
+Calculating portfolio value over time.
+
+```{r}
+year=seq(as.Date("1995/11/22"), by="month",length.out=length(portfolio))
+plot(year,portfolio,type="l",main="Total Portfolio Value",ylab="Dollars",xlab="Years")
+portfolio[length(portfolio)]
+```
+Plot of portfolio value in dollars over time and final value of portfolio.
+
+
+## Problem 2
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(QRM)
+
+SMB=data$SMB[1:1101]
+HML=data$HML[1:1101]
+```
+
+```{r}
+JSuSMB=JohnsonFit(SMB[1:born]/(1+r[1:born]))
+JSuHML=JohnsonFit(HML[1:born]/(1+r[1:born]))
+```
+Fit distributions to SMB and HML assets.
+
+```{r}
+PITx=pJohnson((x[1:born]-r[1:born])/(1+r[1:born]),JohnsonSu)
+hist(PITx)
+PITSMB=pJohnson(SMB[1:born]/(1+r[1:born]),JSuSMB)
+hist(PITSMB)
+PITHML=pJohnson(HML[1:born]/(1+r[1:born]),JSuHML)
+hist(PITHML)
+```
+Get uniform distributions of past data for all 3 assets. Histograms show they are uniform.
+
+```{r, warning=FALSE, message=FALSE}
+l=fit.tcopula(cbind(PITx,PITSMB,PITHML),method="Kendall")
+randomvalues=rcopula.t(100000,l[[2]],l[[1]])
+plot(randomvalues)
+```
+Fit copula to correlated uniforms of past data. Generate 100,000 correlated uniforms from that copula.
+
+```{r}
+r2JSuX=qJohnson(randomvalues[,1],JohnsonSu)
+hist(r2JSuX)
+r2JSuSMB=qJohnson(randomvalues[,2],JSuSMB)
+hist(r2JSuSMB)
+r2JSuHML=qJohnson(randomvalues[,3],JSuHML)
+hist(r2JSuHML)
+```
+Generate distributions of data from the generated correlated uniforms. Show they look like JohnsonSu distributions.
+
+```{r}
+growthrate2=function(b){
+  return(-mean((log(1+b[1]*r2JSuX*0.01+b[2]*r2JSuSMB*0.01+b[3]*r2JSuHML*0.01))))
+}
+```
+New function to optimize with all 3 assets.
+
+```{r, warning=FALSE, message=FALSE}
+f1=0.01
+f2=f1
+f3=f1
+res2=optim(c(f1,f2,f3),growthrate2,method="BFGS")
+f1=res2$par[1]
+f2=res2$par[2]
+f3=res2$par[3]
+f1
+f2
+f3
+```
+Find the optimal fractions of wealth for all 3 assets.
+
+```{r}
+portfolio2=numeric(length(x)-born)
+portfolio2[1]=10000
+for(i in 2:length(portfolio2)){
+  portfolio2[i]=portfolio2[i-1]*(1+(1-f1)*r[born+i]*.01+f1*x[born+i]*.01+f2*SMB[born+i]*.01+f3*HML[born+i]*.01)
+}
+plot(year,portfolio2,type="l",main="Total Portfolio Value",ylab="Dollars",xlab="Years")
+portfolio2[length(portfolio2)]
+```
+Calculating portfolio value over time. Plot of portfolio value over time and final portfolio value.
+
+
+## Question 1
+```{r}
+f
+f1
+```
+The amount borrowed does substantially change from Problem 1 to Problem 2.
+
+
+## Question 2
+
+```{r}
+gr1=-growthrate(f)
+gr1
+gr2=-growthrate2(c(f1,f2,f3))
+gr2
+((exp(gr1)^12)-1)*100
+((exp(gr2)^12)-1)*100
+```
+Monthly log growth rate then annual growth rates in percentages for each problem respectively. The change in growth rates for both types is a pretty large change.
+
+
+## Question 3
+
+```{r}
+plot(year,portfolio2,type="l",col=2,main="Total Portfolio Value",ylab="Dollars",xlab="Years")
+lines(year,portfolio1,type="l",main="Total Portfolio Value",ylab="Dollars",xlab="Years")
+portfolio[length(portfolio)]
+portfolio2[length(portfolio2)]
+```
+The gift recieved increased with the introduction of two new asset classes. This is might be because when the correlation structure is fully understood drops in one asset can be accounted for by an investment in another asset. 
+
+
+## Question 4
+
+```{r}
+sd(log(1+f*x[born:length(x)]*0.01))
+sd(log(1+f1*x[born:length(x)]*0.01+f2*SMB[born:length(x)]*0.01+f3*HML[born:length(x)]*0.01))
+```
+The volatility of the logarithmic growth rate decreased with the introduction of two new asset classes. I think that is because all of the correlation between the assets.
